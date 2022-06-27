@@ -20,7 +20,7 @@ import (
 var generateCmd = &cobra.Command{
 	Use:   "generate",
 	Short: "A tool to convert KES YAML files into ESO YAML files",
-	Long: `kes-to-eso generate is a tool to allow quick conversion between 
+	Long: `kes-to-eso generate is a tool to allow quick conversion between
 	kubernetes-external-secrets and external-secrets-operator.
 	It reads kubernetes-external-secrets deployment declaration and uses
 	this information alongside with any KES externalSecrets declaration to
@@ -102,11 +102,11 @@ var generateCmd = &cobra.Command{
 
 func init() {
 	generateCmd.Flags().Bool("to-stdout", false, "print generated yamls to STDOUT")
+	generateCmd.Flags().Bool("secret-store", true, "generate secret store definitions")
 	generateCmd.Flags().StringP("input", "i", "", "path to lookup for KES yamls")
 	generateCmd.Flags().StringP("output", "o", "", "path ot save ESO-generated yamls")
 	generateCmd.Flags().String("kes-deployment-name", "kubernetes-external-secrets", "name of KES deployment object")
 	generateCmd.Flags().String("kes-container-name", "kubernetes-external-secrets", "name of KES container object")
 	generateCmd.Flags().StringP("kes-namespace", "n", "default", "namespace where KES is installed")
 	generateCmd.Flags().String("target-namespace", "", "namespace to install files (not recommended - overrides KES-ExternalSecrets definitions)")
-
 }

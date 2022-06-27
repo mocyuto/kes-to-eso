@@ -29,10 +29,11 @@ type KESExternalSecretSpec struct {
 	Template        map[string]interface{}
 }
 type KESExternalSecret struct {
-	Kind       string            `json:"kind,omitempty"`
-	ApiVersion string            `json:"apiVersion,omitempty"`
-	ObjectMeta metav1.ObjectMeta `json:"metadata"`
-	Spec       KESExternalSecretSpec
+	Kind             string            `json:"kind,omitempty"`
+	ApiVersion       string            `json:"apiVersion,omitempty"`
+	ObjectMeta       metav1.ObjectMeta `json:"metadata"`
+	Spec             KESExternalSecretSpec
+	SecretDescriptor KESExternalSecretSpec
 }
 
 type KesToEsoOptions struct {

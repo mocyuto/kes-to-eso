@@ -110,6 +110,19 @@ func canMigrateKes(K apis.KESExternalSecret) error {
 	return nil
 }
 
+func getBackendType(K apis.KESExternalSecret) string {
+	//	var spec apis.KESExternalSecretSpec
+	if K.Spec.BackendType != "" {
+		return K.Spec.BackendType
+	}
+
+	if K.SecretDescriptor.BackendType != "" {
+		return K.SecretDescriptor.BackendType
+	}
+
+	return ""
+}
+
 func bindProvider(ctx context.Context, S api.SecretStore, K apis.KESExternalSecret, client *provider.KesToEsoClient) (api.SecretStore, bool) {
 	if client.Options.TargetNamespace != "" {
 		S.ObjectMeta.Namespace = client.Options.TargetNamespace
@@ -117,7 +130,7 @@ func bindProvider(ctx context.Context, S api.SecretStore, K apis.KESExternalSecr
 		S.ObjectMeta.Namespace = K.ObjectMeta.Namespace
 	}
 	var err error
-	backend := K.Spec.BackendType
+	backend := getBackendType(K)
 	switch backend {
 	case "secretsManager":
 		p := api.AWSProvider{}
