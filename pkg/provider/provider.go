@@ -4,17 +4,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	log "github.com/sirupsen/logrus"
-	v1 "k8s.io/api/apps/v1"
-	"kestoeso/pkg/apis"
-	"kestoeso/pkg/utils"
-	"strings"
-
 	api "github.com/external-secrets/external-secrets/apis/externalsecrets/v1beta1"
 	esmeta "github.com/external-secrets/external-secrets/apis/meta/v1"
+	log "github.com/sirupsen/logrus"
+	v1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
+	"kestoeso/pkg/apis"
+	"kestoeso/pkg/utils"
+	"strings"
 )
 
 type KesToEsoClient struct {
@@ -129,6 +128,60 @@ func (c KesToEsoClient) awsSecretRef(deployment *v1.Deployment) (*api.AWSAuthSec
 	}, nil
 }
 
+func (c KesToEsoClient) jwt(ctx context.Context, deployment *v1.Deployment, S api.SecretStore) (api.AWSJWTAuth, error) {
+	ns := &c.Options.Namespace
+	if c.Options.SecretStore {
+		ns = nil
+	}
+	var saSelector esmeta.ServiceAccountSelector
+	if c.Options.AWSOptions.ServiceAccount != "" {
+		saSelector = esmeta.ServiceAccountSelector{
+			Name:      c.Options.AWSOptions.ServiceAccount,
+			Namespace: ns,
+		}
+	} else {
+		saSelector = esmeta.ServiceAccountSelector{
+			Namespace: ns,
+			Name:      deployment.Spec.Template.Spec.ServiceAccountName,
+		}
+	}
+
+	var searchNS string
+	if ns == nil {
+		searchNS = S.Namespace
+	} else {
+		searchNS = *ns
+	}
+	const roleArnKey = "eks.amazonaws.com/role-arn"
+	_, err := c.GetServiceAccountIfAnnotationExists(ctx, roleArnKey, searchNS, saSelector) // Later On with --copy-secret-auths we can use SA to change namespaces and apply
+	if err != nil && ctx.Value("test") == nil {
+		if errors.As(err, &NotFoundErr) {
+			log.Infof("need to create SA: %v", searchNS)
+			svcAccountFilename := fmt.Sprintf("%v/serviceaccount-%v-%v.yaml", c.Options.OutputPath, searchNS, saSelector.Name)
+			sa := corev1.ServiceAccount{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       "ServiceAccount",
+					APIVersion: "v1",
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      saSelector.Name,
+					Namespace: searchNS,
+					Annotations: map[string]string{
+						roleArnKey: c.Options.AWSOptions.SecretStoreRoleArn,
+					},
+				},
+			}
+			err := utils.WriteYaml(sa, svcAccountFilename, c.Options.ToStdout)
+			if err != nil {
+				return api.AWSJWTAuth{}, err
+			}
+		} else {
+			return api.AWSJWTAuth{}, errors.New("could not find aws credential information (secrets or sa with role-arn annotation) on kes deployment")
+		}
+	}
+	return api.AWSJWTAuth{ServiceAccountRef: &saSelector}, nil
+}
+
 func (c KesToEsoClient) InstallAWSSecrets(ctx context.Context, K apis.KESExternalSecret, S api.SecretStore) (api.SecretStore, error) {
 	ans := S
 	deployment, err := c.Client.AppsV1().Deployments(c.Options.Namespace).Get(ctx, c.Options.DeploymentName, metav1.GetOptions{})
@@ -141,42 +194,14 @@ func (c KesToEsoClient) InstallAWSSecrets(ctx context.Context, K apis.KESExterna
 	case "accessKey":
 		awsSecretRef, err := c.awsSecretRef(deployment)
 		if err != nil {
-			return S, nil
+			return S, err
 		}
 		ans.Spec.Provider.AWS.Auth.SecretRef = awsSecretRef
 	case "jwt":
-		ns := &c.Options.Namespace
-		if c.Options.SecretStore {
-			ns = nil
+		JWTAuth, err := c.jwt(ctx, deployment, S)
+		if err != nil {
+			return S, err
 		}
-		var saSelector esmeta.ServiceAccountSelector
-		if c.Options.AWSOptions.ServiceAccount != "" {
-			saSelector = esmeta.ServiceAccountSelector{
-				Name:      c.Options.AWSOptions.ServiceAccount,
-				Namespace: ns,
-			}
-		} else {
-			saSelector = esmeta.ServiceAccountSelector{
-				Namespace: ns,
-				Name:      deployment.Spec.Template.Spec.ServiceAccountName,
-			}
-		}
-
-		var searchNS string
-		if ns == nil {
-			searchNS = S.Namespace
-		} else {
-			searchNS = *ns
-		}
-		_, err := c.GetServiceAccountIfAnnotationExists(ctx, "eks.amazonaws.com/role-arn", searchNS, saSelector) // Later On with --copy-secret-auths we can use SA to change namespaces and apply
-		if err != nil && ctx.Value("test") == nil {
-			if errors.As(err, &NotFoundErr) {
-				log.Warnf("need to create SA: %v", searchNS)
-			} else {
-				return S, errors.New("could not find aws credential information (secrets or sa with role-arn annotation) on kes deployment")
-			}
-		}
-		JWTAuth := api.AWSJWTAuth{ServiceAccountRef: &saSelector}
 		ans.Spec.Provider.AWS.Auth.JWTAuth = &JWTAuth
 	}
 	return ans, nil

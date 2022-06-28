@@ -49,8 +49,9 @@ type KesToEsoOptions struct {
 	AWSOptions      AWSOptions
 }
 type AWSOptions struct {
-	AuthType       string
-	ServiceAccount string
+	AuthType           string
+	ServiceAccount     string
+	SecretStoreRoleArn string
 }
 
 func NewOptions() *KesToEsoOptions {

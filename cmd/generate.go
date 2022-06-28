@@ -43,6 +43,7 @@ var generateCmd = &cobra.Command{
 		opt.CopySecretRefs, _ = cmd.Flags().GetBool("copy-secret-refs") // TODO - IMPLEMENT THIS
 		opt.AWSOptions.AuthType, _ = cmd.Flags().GetString("aws-auth-type")
 		opt.AWSOptions.ServiceAccount, _ = cmd.Flags().GetString("aws-service-account")
+		opt.AWSOptions.SecretStoreRoleArn, _ = cmd.Flags().GetString("aws-role-arn")
 		_, err := os.Stat(opt.InputPath)
 		if err != nil {
 			fmt.Println("Missing input path!")
@@ -127,4 +128,5 @@ func init() {
 	generateCmd.Flags().String("target-namespace", "", "namespace to install files (not recommended - overrides KES-ExternalSecrets definitions)")
 	generateCmd.Flags().String("aws-auth-type", "role", "select AWS auth type.(role, accessKey, jwt)")
 	generateCmd.Flags().String("aws-service-account", "", "generate service account name")
+	generateCmd.Flags().String("aws-role-arn", "", "for secret store role arn")
 }
