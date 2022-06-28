@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	log "github.com/sirupsen/logrus"
 	v1 "k8s.io/api/apps/v1"
 	"kestoeso/pkg/apis"
 	"kestoeso/pkg/utils"
@@ -21,6 +22,8 @@ type KesToEsoClient struct {
 	Client  kubernetes.Interface
 }
 
+var NotFoundErr = errors.New("not found")
+
 func (c KesToEsoClient) GetSecretValue(ctx context.Context, name string, key string, namespace string) (string, error) {
 	secret, err := c.Client.CoreV1().Secrets(namespace).Get(ctx, name, metav1.GetOptions{})
 	if err != nil {
@@ -30,8 +33,8 @@ func (c KesToEsoClient) GetSecretValue(ctx context.Context, name string, key str
 	return string(value), nil
 }
 
-func (c KesToEsoClient) GetServiceAccountIfAnnotationExists(ctx context.Context, key string, sa *esmeta.ServiceAccountSelector) (*corev1.ServiceAccount, error) {
-	s, err := c.Client.CoreV1().ServiceAccounts(*sa.Namespace).Get(ctx, sa.Name, metav1.GetOptions{})
+func (c KesToEsoClient) GetServiceAccountIfAnnotationExists(ctx context.Context, key, ns string, sa esmeta.ServiceAccountSelector) (*corev1.ServiceAccount, error) {
+	s, err := c.Client.CoreV1().ServiceAccounts(ns).Get(ctx, sa.Name, metav1.GetOptions{})
 	if err != nil {
 		return nil, err
 	}
@@ -39,7 +42,7 @@ func (c KesToEsoClient) GetServiceAccountIfAnnotationExists(ctx context.Context,
 	if found {
 		return s, nil
 	} else {
-		return nil, errors.New("annotation key absent in service account")
+		return nil, NotFoundErr
 	}
 }
 
@@ -153,12 +156,23 @@ func (c KesToEsoClient) InstallAWSSecrets(ctx context.Context, K apis.KESExterna
 				Namespace: ns,
 			}
 		} else {
-			saSelector := esmeta.ServiceAccountSelector{
+			saSelector = esmeta.ServiceAccountSelector{
 				Namespace: ns,
 				Name:      deployment.Spec.Template.Spec.ServiceAccountName,
 			}
-			_, err := c.GetServiceAccountIfAnnotationExists(ctx, "eks.amazonaws.com/role-arn", &saSelector) // Later On with --copy-secret-auths we can use SA to change namespaces and apply
-			if err != nil {
+		}
+
+		var searchNS string
+		if ns == nil {
+			searchNS = S.Namespace
+		} else {
+			searchNS = *ns
+		}
+		_, err := c.GetServiceAccountIfAnnotationExists(ctx, "eks.amazonaws.com/role-arn", searchNS, saSelector) // Later On with --copy-secret-auths we can use SA to change namespaces and apply
+		if err != nil && ctx.Value("test") == nil {
+			if errors.As(err, &NotFoundErr) {
+				log.Warnf("need to create SA: %v", searchNS)
+			} else {
 				return S, errors.New("could not find aws credential information (secrets or sa with role-arn annotation) on kes deployment")
 			}
 		}
