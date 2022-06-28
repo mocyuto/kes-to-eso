@@ -13,7 +13,6 @@ type ApplyOptions struct {
 	Namespace     string
 	AllNamespaces bool
 	AllSecrets    bool
-	Name          string
 	TargetOwner   string
 }
 
@@ -22,7 +21,6 @@ func NewApplyOptions() *ApplyOptions {
 		Namespace:     "default",
 		AllNamespaces: false,
 		AllSecrets:    false,
-		Name:          "",
 		TargetOwner:   "kubernetes-external-secrets",
 	}
 	return &a
@@ -97,7 +95,7 @@ func (c ApplyClient) UpdateSecretsFromNamespace(ctx context.Context, secrets []s
 	for _, secret := range secretList.Items {
 		_, ok := secretMap[secret.Name]
 		if ok {
-			log.Debugf("Reading secret %v/%v", secret.Namespace, secret.Name)
+			log.Infof("Reading secret %v/%v", secret.Namespace, secret.Name)
 			update, err := c.updateSingleSecret(ctx, c.Options.Namespace, &secret)
 			if err != nil {
 				return count, err

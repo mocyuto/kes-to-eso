@@ -62,5 +62,4 @@ func init() {
 	applyCmd.Flags().StringP("namespace", "n", "default", "Target namespace to look up for secrets")
 	applyCmd.Flags().StringSliceP("secrets", "s", empty, "list of secret names to be updated")
 	applyCmd.Flags().String("target-owner", "kubernetes-client.io/v1", "Target ownership value that secrets are going to be updated")
-
 }
