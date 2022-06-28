@@ -73,7 +73,7 @@ func NewESOSecret() api.ExternalSecret {
 	d := api.ExternalSecret{}
 	d.TypeMeta = metav1.TypeMeta{
 		Kind:       "ExternalSecret",
-		APIVersion: "external-secrets.io/v1alpha1",
+		APIVersion: "external-secrets.io/v1beta1",
 	}
 	return d
 }

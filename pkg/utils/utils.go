@@ -20,7 +20,7 @@ func IsKES(K apis.KESExternalSecret) bool {
 func NewSecretStore(secretStore bool) api.SecretStore {
 	d := api.SecretStore{}
 	d.TypeMeta = metav1.TypeMeta{
-		APIVersion: "external-secrets.io/v1alpha1",
+		APIVersion: "external-secrets.io/v1beta1",
 	}
 	if secretStore {
 		d.TypeMeta.Kind = "SecretStore"
