@@ -46,6 +46,11 @@ type KesToEsoOptions struct {
 	SecretStore     bool
 	TargetNamespace string
 	CopySecretRefs  bool
+	AWSOptions      AWSOptions
+}
+type AWSOptions struct {
+	AuthType       string
+	ServiceAccount string
 }
 
 func NewOptions() *KesToEsoOptions {

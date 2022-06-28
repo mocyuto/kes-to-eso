@@ -3,6 +3,7 @@ package parser
 import (
 	"context"
 	"fmt"
+	v1 "github.com/external-secrets/external-secrets/apis/meta/v1"
 	"kestoeso/pkg/apis"
 	"kestoeso/pkg/provider"
 	"kestoeso/pkg/utils"
@@ -10,7 +11,7 @@ import (
 	"reflect"
 	"testing"
 
-	api "github.com/external-secrets/external-secrets/apis/externalsecrets/v1alpha1"
+	api "github.com/external-secrets/external-secrets/apis/externalsecrets/v1beta1"
 	"github.com/stretchr/testify/assert"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	testclient "k8s.io/client-go/kubernetes/fake"
@@ -22,13 +23,14 @@ func TestNewEsoSecret(t *testing.T) {
 	if S.TypeMeta.Kind != "ExternalSecret" {
 		t.Errorf("want ExternalSecret got %v", S.TypeMeta.Kind)
 	}
-	if S.TypeMeta.APIVersion != "external-secrets.io/v1alpha1" {
-		t.Errorf("want external-secrets.io/v1alpha1 got %v", S.TypeMeta.APIVersion)
+	if S.TypeMeta.APIVersion != "external-secrets.io/v1beta1" {
+		t.Errorf("want external-secrets.io/v1beta1 got %v", S.TypeMeta.APIVersion)
 	}
 }
 
 func TestBindAWSSMProvider(t *testing.T) {
-	ctx := context.TODO()
+	ctx := context.Background()
+	ctx = context.WithValue(ctx, "test", true)
 	t.Run("Cluster Secret Store", func(t *testing.T) {
 		K := apis.KESExternalSecret{
 			Kind:       "ExternalSecret",
@@ -141,20 +143,31 @@ func TestBindAWSSMProvider(t *testing.T) {
 		p.Service = api.AWSServiceSecretsManager
 		p.Role = "arn:aws:iam::123412341234:role/let-other-account-access-secrets"
 		p.Region = "eu-west-1"
+		p.Auth = api.AWSAuth{
+			JWTAuth: &api.AWSJWTAuth{
+				ServiceAccountRef: &v1.ServiceAccountSelector{Name: "eso"},
+			},
+		}
 		prov := api.SecretStoreProvider{}
 		want.ObjectMeta.Namespace = "kes-ns"
 		prov.AWS = &p
 		want.Spec.Provider = &prov
 		faker := testclient.NewSimpleClientset()
 		c := provider.KesToEsoClient{
-			Client:  faker,
-			Options: &apis.KesToEsoOptions{},
+			Client: faker,
+			Options: &apis.KesToEsoOptions{
+				SecretStore: true,
+				AWSOptions: apis.AWSOptions{
+					AuthType:       "jwt",
+					ServiceAccount: "eso",
+				},
+			},
 		}
 		got, _ := bindProvider(ctx, S, K, &c)
 		// Forcing name to be equal, since it's randomly generated
 		want.ObjectMeta.Name = got.ObjectMeta.Name
 		if !reflect.DeepEqual(want, got) {
-			t.Errorf("want %v got %v", want, got)
+			t.Errorf("\nwant %#v\n got %#v", want.Spec.Provider.AWS, got.Spec.Provider.AWS)
 		}
 	})
 }
@@ -461,7 +474,8 @@ func TestBindVaultProvider(t *testing.T) {
 	}
 	auth := api.VaultAuth{}
 	p.Version = api.VaultKVStoreV2
-	p.Path = "kv"
+	path := "kv"
+	p.Path = &path
 	auth.Kubernetes = &kubeauth
 	p.Auth = auth
 	prov := api.SecretStoreProvider{}
@@ -483,6 +497,7 @@ func TestBindVaultProvider(t *testing.T) {
 }
 
 func TestParseGenerals(t *testing.T) {
+	path := "path/to/data"
 	K := apis.KESExternalSecret{
 		Kind:       "ExternalSecret",
 		ApiVersion: "kubernetes-client.io/v1",
@@ -498,7 +513,7 @@ func TestParseGenerals(t *testing.T) {
 			RoleArn:         "arn:aws:iam::123412341234:role/let-other-account-access-secrets",
 			Region:          "",
 			DataFrom: []string{
-				"path/to/data",
+				path,
 			},
 			Data: []apis.KESExternalSecretData{
 				{
@@ -555,8 +570,8 @@ func TestParseGenerals(t *testing.T) {
 				Name:     "aws-secretsmanager",
 				Template: &api.ExternalSecretTemplate{},
 			},
-			DataFrom: []api.ExternalSecretDataRemoteRef{
-				{Key: "path/to/data"},
+			DataFrom: []api.ExternalSecretDataFromRemoteRef{
+				{Extract: &api.ExternalSecretDataRemoteRef{Key: path}},
 			},
 			Data: []api.ExternalSecretData{
 				{
@@ -608,6 +623,7 @@ func TestLinkSecretStore(t *testing.T) {
 }
 
 func TestParseSpecifics(t *testing.T) {
+	path := "vault-name/data/path/to/data"
 	K := apis.KESExternalSecret{
 		Kind:       "ExternalSecret",
 		ApiVersion: "kubernetes-client.io/v1",
@@ -622,7 +638,7 @@ func TestParseSpecifics(t *testing.T) {
 			KvVersion:       2,
 			Region:          "",
 			DataFrom: []string{
-				"vault-name/data/path/to/data",
+				path,
 			},
 			Data: []apis.KESExternalSecretData{
 				{
@@ -662,8 +678,8 @@ func TestParseSpecifics(t *testing.T) {
 				Name:     "vault",
 				Template: &api.ExternalSecretTemplate{},
 			},
-			DataFrom: []api.ExternalSecretDataRemoteRef{
-				{Key: "vault-name/data/path/to/data"},
+			DataFrom: []api.ExternalSecretDataFromRemoteRef{
+				{Extract: &api.ExternalSecretDataRemoteRef{Key: path}},
 			},
 			Data: []api.ExternalSecretData{
 				{
@@ -687,7 +703,7 @@ func TestParseSpecifics(t *testing.T) {
 	if err != nil {
 		t.Errorf("want success got err: %v", err)
 	}
-
+	wantPath := "path/to/data"
 	want := api.ExternalSecret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "vault",
@@ -702,8 +718,8 @@ func TestParseSpecifics(t *testing.T) {
 				Name:     "vault",
 				Template: &api.ExternalSecretTemplate{},
 			},
-			DataFrom: []api.ExternalSecretDataRemoteRef{
-				{Key: "path/to/data"},
+			DataFrom: []api.ExternalSecretDataFromRemoteRef{
+				{Extract: &api.ExternalSecretDataRemoteRef{Key: wantPath}},
 			},
 			Data: []api.ExternalSecretData{
 				{
@@ -740,8 +756,8 @@ func TestParseSpecifics(t *testing.T) {
 				Name:     "vault",
 				Template: &api.ExternalSecretTemplate{},
 			},
-			DataFrom: []api.ExternalSecretDataRemoteRef{
-				{Key: "path/to/data"},
+			DataFrom: []api.ExternalSecretDataFromRemoteRef{
+				{Extract: &api.ExternalSecretDataRemoteRef{Key: path}},
 			},
 			Data: []api.ExternalSecretData{
 				{
@@ -851,47 +867,66 @@ func loadWants(cases []rootStruct) ([]rootStruct, error) {
 }
 func TestRoot(t *testing.T) {
 	ctx := context.TODO()
-	testCases := []rootStruct{
-		{
-			name:   "aws-secretsmanager",
-			golden: "aws-secretsmanager",
-		},
-		{
-			name:   "aws-secretsmanager2",
-			golden: "aws-secretsmanager2",
-		},
-	}
-	testCases, err := loadInput(testCases)
-	if err != nil {
-		t.Fatalf("ERROR! %v", err)
-	}
-	_, err = loadWants(testCases)
-	if err != nil {
-		t.Fatalf("ERROR! %v", err)
-	}
-	options := apis.KesToEsoOptions{
-		Namespace:      "",
-		ContainerName:  "",
-		DeploymentName: "",
-		InputPath:      "testdata",
-		ToStdout:       true,
-	}
-	faker := testclient.NewSimpleClientset()
-	c := provider.KesToEsoClient{
-		Client:  faker,
-		Options: &options,
-	}
-	resp := Root(ctx, &c)
-	for idx, testcase := range testCases {
-		assert.Equal(t, testcase.externalSecretWants, resp[idx].Es)
-		if testcase.secretStoreWants != nil {
-			assert.Equal(t, *testcase.secretStoreWants, resp[idx].Ss)
-			assert.Equal(t, testcase.secretStoreWants.Spec.Provider, resp[idx].Ss.Spec.Provider)
+	ctx = context.WithValue(ctx, "test", true)
+	exec := func(cases []rootStruct, options apis.KesToEsoOptions) {
+		testCases, err := loadInput(cases)
+		if err != nil {
+			t.Fatalf("ERROR! %v", err)
 		}
-		if testcase.clusterSecretStoreWants != nil {
-			assert.Equal(t, *testcase.clusterSecretStoreWants, resp[idx].Ss)
-			assert.Equal(t, testcase.clusterSecretStoreWants.Spec.Provider, resp[idx].Ss.Spec.Provider)
+		_, err = loadWants(testCases)
+		if err != nil {
+			t.Fatalf("ERROR! %v", err)
+		}
+		faker := testclient.NewSimpleClientset()
+		c := provider.KesToEsoClient{
+			Client:  faker,
+			Options: &options,
+		}
+		resp := Root(ctx, &c)
+		for idx, testcase := range testCases {
+			assert.Equal(t, testcase.externalSecretWants, resp[idx].Es)
+			if testcase.secretStoreWants != nil {
+				assert.Equal(t, *testcase.secretStoreWants, resp[idx].Ss)
+				assert.Equal(t, testcase.secretStoreWants.Spec.Provider, resp[idx].Ss.Spec.Provider)
+			}
+			if testcase.clusterSecretStoreWants != nil {
+				assert.Equal(t, *testcase.clusterSecretStoreWants, resp[idx].Ss)
+				assert.Equal(t, testcase.clusterSecretStoreWants.Spec.Provider, resp[idx].Ss.Spec.Provider)
+			}
 		}
 	}
+	t.Run("normal input", func(t *testing.T) {
+		testCases := []rootStruct{
+			{
+				name:   "aws-secretsmanager",
+				golden: "aws-secretsmanager",
+			},
+		}
 
+		options := apis.KesToEsoOptions{
+			InputPath:  "testdata",
+			ToStdout:   true,
+			AWSOptions: apis.AWSOptions{AuthType: "role"},
+		}
+		exec(testCases, options)
+	})
+	t.Run("secret store jwt", func(t *testing.T) {
+		testCases := []rootStruct{
+			{
+				name:   "aws-secretsmanager2",
+				golden: "aws-secretsmanager2",
+			},
+		}
+
+		options := apis.KesToEsoOptions{
+			InputPath:   "testdata",
+			ToStdout:    true,
+			SecretStore: true,
+			AWSOptions: apis.AWSOptions{
+				AuthType:       "jwt",
+				ServiceAccount: "external-secrets-operator",
+			},
+		}
+		exec(testCases, options)
+	})
 }

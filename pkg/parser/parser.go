@@ -7,13 +7,12 @@ import (
 	"kestoeso/pkg/apis"
 	"kestoeso/pkg/provider"
 	"kestoeso/pkg/utils"
-	"math/rand"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 
-	api "github.com/external-secrets/external-secrets/apis/externalsecrets/v1alpha1"
+	api "github.com/external-secrets/external-secrets/apis/externalsecrets/v1beta1"
 	log "github.com/sirupsen/logrus"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -78,16 +77,6 @@ func NewESOSecret() api.ExternalSecret {
 	return d
 }
 
-var letters = []rune("abcdefghijklmnopqrstuvwxyz")
-
-func randSeq(n int) string {
-	b := make([]rune, n)
-	for i := range b {
-		b[i] = letters[rand.Intn(len(letters))]
-	}
-	return string(b)
-}
-
 func mapLoop(m map[string]interface{}) error {
 	for k := range m {
 		if k != "metadata" && k != "type" && k != "data" {
@@ -133,26 +122,20 @@ func bindProvider(ctx context.Context, S api.SecretStore, K apis.KESExternalSecr
 	backend := getBackendType(K)
 	switch backend {
 	case "secretsManager":
-		p := api.AWSProvider{}
-		p.Service = api.AWSServiceSecretsManager
-		p.Role = K.Spec.RoleArn
-		p.Region = K.Spec.Region
+		p := api.AWSProvider{Service: api.AWSServiceSecretsManager, Region: K.Spec.Region}
 		prov := api.SecretStoreProvider{}
 		prov.AWS = &p
 		S.Spec.Provider = &prov
-		S, err = client.InstallAWSSecrets(ctx, S)
+		S, err = client.InstallAWSSecrets(ctx, K, S)
 		if err != nil {
 			log.Warnf("Failed to Install AWS Backend Specific configuration: %v. Make sure you have set up Controller Pod Identity or manually edit SecretStore before applying it", err)
 		}
 	case "systemManager":
-		p := api.AWSProvider{}
-		p.Service = api.AWSServiceParameterStore
+		p := api.AWSProvider{Service: api.AWSServiceParameterStore, Region: K.Spec.Region}
 		prov := api.SecretStoreProvider{}
 		prov.AWS = &p
-		p.Role = K.Spec.RoleArn
-		p.Region = K.Spec.Region
 		S.Spec.Provider = &prov
-		S, err = client.InstallAWSSecrets(ctx, S)
+		S, err = client.InstallAWSSecrets(ctx, K, S)
 		if err != nil {
 			log.Warnf("Failed to Install AWS Backend Specific configuration: %v. Make sure you have set up Controller Pod Identity Manually Edit SecretStore before applying it", err)
 		}
@@ -191,18 +174,18 @@ func bindProvider(ctx context.Context, S api.SecretStore, K apis.KESExternalSecr
 			p.Version = api.VaultKVStoreV1
 		} else {
 			p.Version = api.VaultKVStoreV2
-			preffix := ""
+			prefix := ""
 			for _, data := range K.Spec.Data {
-				if preffix == "" {
+				if prefix == "" {
 					pref := strings.Split(data.Key, "/")[0]
-					preffix = pref
+					prefix = pref
 				}
-				if preffix != strings.Split(data.Key, "/")[0] {
+				if prefix != strings.Split(data.Key, "/")[0] {
 					log.Fatal("Failed to parse secret store for KES secret!")
 					return S, false
 				}
 			}
-			p.Path = preffix
+			p.Path = &prefix
 		}
 		prov := api.SecretStoreProvider{}
 		prov.Vault = &p
@@ -224,7 +207,7 @@ func bindProvider(ctx context.Context, S api.SecretStore, K apis.KESExternalSecr
 	}
 	exists, pos := ESOSecretStoreList.Exists(S)
 	if !exists {
-		S.ObjectMeta.Name = fmt.Sprintf("%v-secretstore-autogen-%v", strings.ToLower(backend), randSeq(8))
+		S.ObjectMeta.Name = fmt.Sprintf("%v-secretstore-%v-%v", strings.ToLower(backend), S.ObjectMeta.Namespace, K.ObjectMeta.Name)
 		ESOSecretStoreList = append(ESOSecretStoreList, S)
 		return S, true
 	} else {
@@ -253,12 +236,12 @@ func parseSpecifics(K apis.KESExternalSecret, E api.ExternalSecret) (api.Externa
 			}
 		}
 		for idx, dataFrom := range ans.Spec.DataFrom {
-			paths := strings.Split(dataFrom.Key, "/")
+			paths := strings.Split(dataFrom.Extract.Key, "/")
 			if paths[1] != "data" { // we have the good format like <vaultname>/data/<path>/<to>/<secret>
 				return E, errors.New("secret key not compatible with kv2 format (<vault>/data/<path>/<to>/<secret>)")
 			}
 			str := strings.Join(paths[2:], "/")
-			ans.Spec.DataFrom[idx].Key = str
+			ans.Spec.DataFrom[idx].Extract.Key = str
 
 		}
 	default:
@@ -292,8 +275,10 @@ func parseGenerals(K apis.KESExternalSecret, E api.ExternalSecret, options *apis
 		secret.Spec.Data = append(secret.Spec.Data, esoSecretData)
 	}
 	for _, kesSecretDataFrom := range K.Spec.DataFrom {
-		esoDataFrom := api.ExternalSecretDataRemoteRef{
-			Key: kesSecretDataFrom,
+		esoDataFrom := api.ExternalSecretDataFromRemoteRef{
+			Extract: &api.ExternalSecretDataRemoteRef{
+				Key: kesSecretDataFrom,
+			},
 		}
 		secret.Spec.DataFrom = append(secret.Spec.DataFrom, esoDataFrom)
 	}

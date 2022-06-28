@@ -17,6 +17,7 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 )
 
+var awsAuthType = []string{"role", "accessKey", "jwt"}
 var generateCmd = &cobra.Command{
 	Use:   "generate",
 	Short: "A tool to convert KES YAML files into ESO YAML files",
@@ -40,6 +41,8 @@ var generateCmd = &cobra.Command{
 		opt.InputPath, _ = cmd.Flags().GetString("input")
 		opt.TargetNamespace, _ = cmd.Flags().GetString("target-namespace")
 		opt.CopySecretRefs, _ = cmd.Flags().GetBool("copy-secret-refs") // TODO - IMPLEMENT THIS
+		opt.AWSOptions.AuthType, _ = cmd.Flags().GetString("aws-auth-type")
+		opt.AWSOptions.ServiceAccount, _ = cmd.Flags().GetString("aws-service-account")
 		_, err := os.Stat(opt.InputPath)
 		if err != nil {
 			fmt.Println("Missing input path!")
@@ -79,6 +82,10 @@ var generateCmd = &cobra.Command{
 		if opt.SecretStore && !opt.CopySecretRefs {
 			log.Warnf("Warning! Backend Secret References are not being copied to the secret store namespaces! This could lead to unintended behavior (--secret-store=true --copy-secret-refs=false)")
 		}
+		if !validateAWSAuthType(opt.AWSOptions.AuthType) {
+			log.Fatalf("set valid auth type: %v", awsAuthType)
+		}
+
 		kubeconfig := filepath.Join(os.Getenv("HOME"), ".kube", "config")
 		config, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
 		if err != nil {
@@ -100,6 +107,15 @@ var generateCmd = &cobra.Command{
 	},
 }
 
+func validateAWSAuthType(value string) bool {
+	for _, v := range awsAuthType {
+		if v == value {
+			return true
+		}
+	}
+	return false
+}
+
 func init() {
 	generateCmd.Flags().Bool("to-stdout", false, "print generated yamls to STDOUT")
 	generateCmd.Flags().Bool("secret-store", true, "generate secret store definitions")
@@ -109,4 +125,6 @@ func init() {
 	generateCmd.Flags().String("kes-container-name", "kubernetes-external-secrets", "name of KES container object")
 	generateCmd.Flags().StringP("kes-namespace", "n", "default", "namespace where KES is installed")
 	generateCmd.Flags().String("target-namespace", "", "namespace to install files (not recommended - overrides KES-ExternalSecrets definitions)")
+	generateCmd.Flags().String("aws-auth-type", "role", "select AWS auth type.(role, accessKey, jwt)")
+	generateCmd.Flags().String("aws-service-account", "", "generate service account name")
 }

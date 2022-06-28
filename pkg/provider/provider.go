@@ -4,11 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	v1 "k8s.io/api/apps/v1"
 	"kestoeso/pkg/apis"
 	"kestoeso/pkg/utils"
 	"strings"
 
-	api "github.com/external-secrets/external-secrets/apis/externalsecrets/v1alpha1"
+	api "github.com/external-secrets/external-secrets/apis/externalsecrets/v1beta1"
 	esmeta "github.com/external-secrets/external-secrets/apis/meta/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -42,16 +43,11 @@ func (c KesToEsoClient) GetServiceAccountIfAnnotationExists(ctx context.Context,
 	}
 }
 
-func (c KesToEsoClient) InstallAWSSecrets(ctx context.Context, S api.SecretStore) (api.SecretStore, error) {
-	ans := S
-	deployment, err := c.Client.AppsV1().Deployments(c.Options.Namespace).Get(ctx, c.Options.DeploymentName, metav1.GetOptions{})
-	if err != nil {
-		return S, err
-	}
+func (c KesToEsoClient) awsSecretRef(deployment *v1.Deployment) (*api.AWSAuthSecretRef, error) {
 	containers := deployment.Spec.Template.Spec.Containers
 	var accessKeyIdSecretKeyRefKey, accessKeyIdSecretKeyRefName string
 	var secretAccessKeySecretKeyRefKey, secretAccessKeySecretKeyRefName string
-	var newsecret = &corev1.Secret{}
+	var newSecret = &corev1.Secret{}
 	for _, container := range containers {
 		if container.Name == c.Options.ContainerName {
 			containerEnvs := container.Env
@@ -72,9 +68,10 @@ func (c KesToEsoClient) InstallAWSSecrets(ctx context.Context, S api.SecretStore
 							Namespace: &ns,
 							Key:       accessKeyIdSecretKeyRefKey,
 						}
-						newsecret, err = utils.UpdateOrCreateSecret(newsecret, &keySelector, env.Value)
+						var err error
+						newSecret, err = utils.UpdateOrCreateSecret(newSecret, &keySelector, env.Value)
 						if err != nil {
-							return S, err
+							return nil, err
 						}
 					}
 				}
@@ -94,9 +91,10 @@ func (c KesToEsoClient) InstallAWSSecrets(ctx context.Context, S api.SecretStore
 							Namespace: &ns,
 							Key:       secretAccessKeySecretKeyRefKey,
 						}
-						newsecret, err = utils.UpdateOrCreateSecret(newsecret, &secretSelector, env.Value)
+						var err error
+						newSecret, err = utils.UpdateOrCreateSecret(newSecret, &secretSelector, env.Value)
 						if err != nil {
-							return S, err
+							return nil, err
 						}
 					}
 				}
@@ -107,7 +105,14 @@ func (c KesToEsoClient) InstallAWSSecrets(ctx context.Context, S api.SecretStore
 			break
 		}
 	}
-	awsSecretRef := api.AWSAuthSecretRef{
+	if newSecret.ObjectMeta.Name != "" {
+		secretFilename := fmt.Sprintf("%v/secret-%v.yaml", c.Options.OutputPath, newSecret.ObjectMeta.Name)
+		err := utils.WriteYaml(newSecret, secretFilename, c.Options.ToStdout)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return &api.AWSAuthSecretRef{
 		AccessKeyID: esmeta.SecretKeySelector{
 			Name:      accessKeyIdSecretKeyRefName,
 			Key:       accessKeyIdSecretKeyRefKey,
@@ -118,23 +123,44 @@ func (c KesToEsoClient) InstallAWSSecrets(ctx context.Context, S api.SecretStore
 			Key:       secretAccessKeySecretKeyRefKey,
 			Namespace: &c.Options.Namespace,
 		},
+	}, nil
+}
+
+func (c KesToEsoClient) InstallAWSSecrets(ctx context.Context, K apis.KESExternalSecret, S api.SecretStore) (api.SecretStore, error) {
+	ans := S
+	deployment, err := c.Client.AppsV1().Deployments(c.Options.Namespace).Get(ctx, c.Options.DeploymentName, metav1.GetOptions{})
+	if err != nil && ctx.Value("test") == nil {
+		return S, err
 	}
-	ans.Spec.Provider.AWS.Auth.SecretRef = &awsSecretRef
-	if newsecret.ObjectMeta.Name != "" {
-		secret_filename := fmt.Sprintf("%v/secret-%v.yaml", c.Options.OutputPath, newsecret.ObjectMeta.Name)
-		err := utils.WriteYaml(newsecret, secret_filename, c.Options.ToStdout)
+	switch c.Options.AWSOptions.AuthType {
+	case "role":
+		ans.Spec.Provider.AWS.Role = K.Spec.RoleArn
+	case "accessKey":
+		awsSecretRef, err := c.awsSecretRef(deployment)
 		if err != nil {
-			return ans, err
+			return S, nil
 		}
-	}
-	if awsSecretRef.AccessKeyID.Name == "" || awsSecretRef.SecretAccessKey.Name == "" {
-		saSelector := esmeta.ServiceAccountSelector{
-			Namespace: &c.Options.Namespace,
-			Name:      deployment.Spec.Template.Spec.ServiceAccountName,
+		ans.Spec.Provider.AWS.Auth.SecretRef = awsSecretRef
+	case "jwt":
+		ns := &c.Options.Namespace
+		if c.Options.SecretStore {
+			ns = nil
 		}
-		_, err := c.GetServiceAccountIfAnnotationExists(ctx, "eks.amazonaws.com/role-arn", &saSelector) // Later On with --copy-secret-auths we can use SA to change namespaces and apply
-		if err != nil {
-			return S, errors.New("could not find aws credential information (secrets or sa with role-arn annotation) on kes deployment")
+		var saSelector esmeta.ServiceAccountSelector
+		if c.Options.AWSOptions.ServiceAccount != "" {
+			saSelector = esmeta.ServiceAccountSelector{
+				Name:      c.Options.AWSOptions.ServiceAccount,
+				Namespace: ns,
+			}
+		} else {
+			saSelector := esmeta.ServiceAccountSelector{
+				Namespace: ns,
+				Name:      deployment.Spec.Template.Spec.ServiceAccountName,
+			}
+			_, err := c.GetServiceAccountIfAnnotationExists(ctx, "eks.amazonaws.com/role-arn", &saSelector) // Later On with --copy-secret-auths we can use SA to change namespaces and apply
+			if err != nil {
+				return S, errors.New("could not find aws credential information (secrets or sa with role-arn annotation) on kes deployment")
+			}
 		}
 		JWTAuth := api.AWSJWTAuth{ServiceAccountRef: &saSelector}
 		ans.Spec.Provider.AWS.Auth.JWTAuth = &JWTAuth
