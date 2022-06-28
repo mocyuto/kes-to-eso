@@ -29,69 +29,134 @@ func TestNewEsoSecret(t *testing.T) {
 
 func TestBindAWSSMProvider(t *testing.T) {
 	ctx := context.TODO()
-	K := apis.KESExternalSecret{
-		Kind:       "ExternalSecret",
-		ApiVersion: "kubernetes-client.io/v1",
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "aws-secretsmanager",
-			Namespace: "kes-ns",
-		},
-		Spec: apis.KESExternalSecretSpec{
-			BackendType:     "secretsManager",
-			VaultMountPoint: "",
-			VaultRole:       "",
-			ProjectID:       "",
-			RoleArn:         "arn:aws:iam::123412341234:role/let-other-account-access-secrets",
-			Region:          "eu-west-1",
-			DataFrom: []string{
-				"path/to/data",
+	t.Run("Cluster Secret Store", func(t *testing.T) {
+		K := apis.KESExternalSecret{
+			Kind:       "ExternalSecret",
+			ApiVersion: "kubernetes-client.io/v1",
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "aws-secretsmanager",
+				Namespace: "kes-ns",
 			},
-			Data: []apis.KESExternalSecretData{
-				{
-					Key:          "demo-service/credentials",
-					Name:         "password",
-					SecretType:   "",
-					Property:     "password",
-					Recursive:    "",
-					Path:         "",
-					VersionStage: "",
-					IsBinary:     false,
+			Spec: apis.KESExternalSecretSpec{
+				BackendType:     "secretsManager",
+				VaultMountPoint: "",
+				VaultRole:       "",
+				ProjectID:       "",
+				RoleArn:         "arn:aws:iam::123412341234:role/let-other-account-access-secrets",
+				Region:          "eu-west-1",
+				DataFrom: []string{
+					"path/to/data",
 				},
-				{
-					Key:          "demo-service/credentials",
-					Name:         "username",
-					SecretType:   "",
-					Property:     "username",
-					Recursive:    "",
-					Path:         "",
-					VersionStage: "",
-					IsBinary:     false,
+				Data: []apis.KESExternalSecretData{
+					{
+						Key:          "demo-service/credentials",
+						Name:         "password",
+						SecretType:   "",
+						Property:     "password",
+						Recursive:    "",
+						Path:         "",
+						VersionStage: "",
+						IsBinary:     false,
+					},
+					{
+						Key:          "demo-service/credentials",
+						Name:         "username",
+						SecretType:   "",
+						Property:     "username",
+						Recursive:    "",
+						Path:         "",
+						VersionStage: "",
+						IsBinary:     false,
+					},
 				},
 			},
-		},
-	}
-	S := utils.NewSecretStore(false)
-	want := utils.NewSecretStore(false)
-	p := api.AWSProvider{}
-	p.Service = api.AWSServiceSecretsManager
-	p.Role = "arn:aws:iam::123412341234:role/let-other-account-access-secrets"
-	p.Region = "eu-west-1"
-	prov := api.SecretStoreProvider{}
-	want.ObjectMeta.Namespace = "kes-ns"
-	prov.AWS = &p
-	want.Spec.Provider = &prov
-	faker := testclient.NewSimpleClientset()
-	c := provider.KesToEsoClient{
-		Client:  faker,
-		Options: &apis.KesToEsoOptions{},
-	}
-	got, _ := bindProvider(ctx, S, K, &c)
-	// Forcing name to be equal, since it's randomly generated
-	want.ObjectMeta.Name = got.ObjectMeta.Name
-	if !reflect.DeepEqual(want, got) {
-		t.Errorf("want %v got %v", want, got)
-	}
-
+		}
+		S := utils.NewSecretStore(false)
+		want := utils.NewSecretStore(false)
+		p := api.AWSProvider{}
+		p.Service = api.AWSServiceSecretsManager
+		p.Role = "arn:aws:iam::123412341234:role/let-other-account-access-secrets"
+		p.Region = "eu-west-1"
+		prov := api.SecretStoreProvider{}
+		want.ObjectMeta.Namespace = "kes-ns"
+		prov.AWS = &p
+		want.Spec.Provider = &prov
+		faker := testclient.NewSimpleClientset()
+		c := provider.KesToEsoClient{
+			Client:  faker,
+			Options: &apis.KesToEsoOptions{},
+		}
+		got, _ := bindProvider(ctx, S, K, &c)
+		// Forcing name to be equal, since it's randomly generated
+		want.ObjectMeta.Name = got.ObjectMeta.Name
+		if !reflect.DeepEqual(want, got) {
+			t.Errorf("want %v got %v", want, got)
+		}
+	})
+	t.Run("Secret Store", func(t *testing.T) {
+		K := apis.KESExternalSecret{
+			Kind:       "ExternalSecret",
+			ApiVersion: "kubernetes-client.io/v1",
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "aws-secretsmanager",
+				Namespace: "kes-ns",
+			},
+			Spec: apis.KESExternalSecretSpec{
+				BackendType:     "secretsManager",
+				VaultMountPoint: "",
+				VaultRole:       "",
+				ProjectID:       "",
+				RoleArn:         "arn:aws:iam::123412341234:role/let-other-account-access-secrets",
+				Region:          "eu-west-1",
+				DataFrom: []string{
+					"path/to/data",
+				},
+				Data: []apis.KESExternalSecretData{
+					{
+						Key:          "demo-service/credentials",
+						Name:         "password",
+						SecretType:   "",
+						Property:     "password",
+						Recursive:    "",
+						Path:         "",
+						VersionStage: "",
+						IsBinary:     false,
+					},
+					{
+						Key:          "demo-service/credentials",
+						Name:         "username",
+						SecretType:   "",
+						Property:     "username",
+						Recursive:    "",
+						Path:         "",
+						VersionStage: "",
+						IsBinary:     false,
+					},
+				},
+			},
+		}
+		S := utils.NewSecretStore(true)
+		want := utils.NewSecretStore(true)
+		p := api.AWSProvider{}
+		p.Service = api.AWSServiceSecretsManager
+		p.Role = "arn:aws:iam::123412341234:role/let-other-account-access-secrets"
+		p.Region = "eu-west-1"
+		prov := api.SecretStoreProvider{}
+		want.ObjectMeta.Namespace = "kes-ns"
+		prov.AWS = &p
+		want.Spec.Provider = &prov
+		faker := testclient.NewSimpleClientset()
+		c := provider.KesToEsoClient{
+			Client:  faker,
+			Options: &apis.KesToEsoOptions{},
+		}
+		got, _ := bindProvider(ctx, S, K, &c)
+		// Forcing name to be equal, since it's randomly generated
+		want.ObjectMeta.Name = got.ObjectMeta.Name
+		if !reflect.DeepEqual(want, got) {
+			t.Errorf("want %v got %v", want, got)
+		}
+	})
 }
 
 func TestBindAWSPSProvider(t *testing.T) {
@@ -790,6 +855,10 @@ func TestRoot(t *testing.T) {
 		{
 			name:   "aws-secretsmanager",
 			golden: "aws-secretsmanager",
+		},
+		{
+			name:   "aws-secretsmanager2",
+			golden: "aws-secretsmanager2",
 		},
 	}
 	testCases, err := loadInput(testCases)
