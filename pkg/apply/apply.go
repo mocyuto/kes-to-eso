@@ -9,15 +9,16 @@ import (
 	"k8s.io/client-go/kubernetes"
 )
 
-type ApplyOptions struct {
+type Options struct {
 	Namespace     string
 	AllNamespaces bool
 	AllSecrets    bool
 	TargetOwner   string
+	DryRun        bool
 }
 
-func NewApplyOptions() *ApplyOptions {
-	a := ApplyOptions{
+func NewApplyOptions() *Options {
+	a := Options{
 		Namespace:     "default",
 		AllNamespaces: false,
 		AllSecrets:    false,
@@ -27,7 +28,7 @@ func NewApplyOptions() *ApplyOptions {
 }
 
 type ApplyClient struct {
-	Options *ApplyOptions
+	Options *Options
 	Client  kubernetes.Interface
 }
 
@@ -51,11 +52,15 @@ func (c ApplyClient) updateSingleSecret(ctx context.Context, namespace string, s
 			} else {
 				tmpSecret.OwnerReferences = []metav1.OwnerReference{}
 			}
-			_, err := c.Client.CoreV1().Secrets(namespace).Update(ctx, tmpSecret, metav1.UpdateOptions{})
-			if err != nil {
-				return false, err
+			if c.Options.DryRun {
+				log.Infof("[DryRun] Secret %v/%v updated successfully", secret.Namespace, secret.Name)
+			} else {
+				_, err := c.Client.CoreV1().Secrets(namespace).Update(ctx, tmpSecret, metav1.UpdateOptions{})
+				if err != nil {
+					return false, err
+				}
+				log.Infof("Secret %v/%v updated successfully", secret.Namespace, secret.Name)
 			}
-			log.Infof("Secret %v/%v updated successfully", secret.Namespace, secret.Name)
 			return true, nil
 		}
 	}

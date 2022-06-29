@@ -29,6 +29,7 @@ var applyCmd = &cobra.Command{
 		opt.AllSecrets, _ = cmd.Flags().GetBool("all-secrets")
 		opt.Namespace, _ = cmd.Flags().GetString("namespace")
 		opt.TargetOwner, _ = cmd.Flags().GetString("target-owner")
+		opt.DryRun, _ = cmd.Flags().GetBool("dry-run")
 		targetSecrets, _ := cmd.Flags().GetStringSlice("secrets")
 		kubeconfig := filepath.Join(os.Getenv("HOME"), ".kube", "config")
 		config, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
@@ -62,4 +63,5 @@ func init() {
 	applyCmd.Flags().StringP("namespace", "n", "default", "Target namespace to look up for secrets")
 	applyCmd.Flags().StringSliceP("secrets", "s", empty, "list of secret names to be updated")
 	applyCmd.Flags().String("target-owner", "kubernetes-client.io/v1", "Target ownership value that secrets are going to be updated")
+	applyCmd.Flags().Bool("dry-run", false, "dry run")
 }
