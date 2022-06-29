@@ -52,8 +52,6 @@ func (storedb SecretStoreDB) Exists(S api.SecretStore) (bool, int) {
 
 var ESOSecretStoreList = make(SecretStoreDB, 0)
 
-//
-
 func readKESFromFile(file string) (apis.KESExternalSecret, error) {
 	dat, err := os.ReadFile(file)
 	if err != nil {
@@ -67,7 +65,6 @@ func readKESFromFile(file string) (apis.KESExternalSecret, error) {
 	return K, nil
 }
 
-//TODO: Allow future versions here
 func NewESOSecret() api.ExternalSecret {
 	d := api.ExternalSecret{}
 	d.TypeMeta = metav1.TypeMeta{
@@ -266,29 +263,18 @@ func parseGenerals(K apis.KESExternalSecret, E api.ExternalSecret, options *apis
 	} else {
 		secret.ObjectMeta.Namespace = K.ObjectMeta.Namespace
 	}
-	var refKey string
+
 	for _, kesSecretData := range K.Spec.Data {
-		if kesSecretData.SecretType != "" {
-			refKey = kesSecretData.SecretType + "/" + kesSecretData.Key
-		} else {
-			refKey = kesSecretData.Key
-		}
-		esoRemoteRef := api.ExternalSecretDataRemoteRef{
-			Key:      refKey,
-			Property: kesSecretData.Property,
-			Version:  kesSecretData.Version}
-		esoSecretData := api.ExternalSecretData{
-			SecretKey: kesSecretData.Name,
-			RemoteRef: esoRemoteRef}
-		secret.Spec.Data = append(secret.Spec.Data, esoSecretData)
+		applyData(kesSecretData, &secret)
 	}
 	for _, kesSecretDataFrom := range K.Spec.DataFrom {
-		esoDataFrom := api.ExternalSecretDataFromRemoteRef{
-			Extract: &api.ExternalSecretDataRemoteRef{
-				Key: kesSecretDataFrom,
-			},
-		}
-		secret.Spec.DataFrom = append(secret.Spec.DataFrom, esoDataFrom)
+		applyDataFrom(kesSecretDataFrom, &secret)
+	}
+	for _, data := range K.SecretDescriptor.Data {
+		applyData(data, &secret)
+	}
+	for _, dataFrom := range K.SecretDescriptor.DataFrom {
+		applyDataFrom(dataFrom, &secret)
 	}
 	templ, err := fillTemplate(secret.Spec.Target.Template, K.Spec.Template)
 	if err != nil {
@@ -296,7 +282,31 @@ func parseGenerals(K apis.KESExternalSecret, E api.ExternalSecret, options *apis
 	}
 	secret.Spec.Target.Template = &templ
 	return secret, nil
+}
 
+func applyData(data apis.KESExternalSecretData, E *api.ExternalSecret) {
+	var refKey string
+	if data.SecretType != "" {
+		refKey = data.SecretType + "/" + data.Key
+	} else {
+		refKey = data.Key
+	}
+	esoRemoteRef := api.ExternalSecretDataRemoteRef{
+		Key:      refKey,
+		Property: data.Property,
+		Version:  data.Version}
+	esoSecretData := api.ExternalSecretData{
+		SecretKey: data.Name,
+		RemoteRef: esoRemoteRef}
+	E.Spec.Data = append(E.Spec.Data, esoSecretData)
+}
+func applyDataFrom(dataFrom string, E *api.ExternalSecret) {
+	esoDataFrom := api.ExternalSecretDataFromRemoteRef{
+		Extract: &api.ExternalSecretDataRemoteRef{
+			Key: dataFrom,
+		},
+	}
+	E.Spec.DataFrom = append(E.Spec.DataFrom, esoDataFrom)
 }
 
 func fillTemplate(template *api.ExternalSecretTemplate, m map[string]interface{}) (api.ExternalSecretTemplate, error) {

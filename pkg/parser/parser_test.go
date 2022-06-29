@@ -885,6 +885,7 @@ func TestRoot(t *testing.T) {
 		resp := Root(ctx, &c)
 		for idx, testcase := range testCases {
 			assert.Equal(t, testcase.externalSecretWants, resp[idx].Es)
+			assert.Equal(t, testcase.externalSecretWants.Spec.Data, resp[idx].Es.Spec.Data)
 			if testcase.secretStoreWants != nil {
 				assert.Equal(t, *testcase.secretStoreWants, resp[idx].Ss)
 				assert.Equal(t, testcase.secretStoreWants.Spec.Provider, resp[idx].Ss.Spec.Provider)
