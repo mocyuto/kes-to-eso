@@ -122,6 +122,10 @@ func bindProvider(ctx context.Context, S api.SecretStore, K apis.KESExternalSecr
 	backend := getBackendType(K)
 	switch backend {
 	case "secretsManager":
+		if client.Options.AWSOptions.AuthType == "" {
+			log.Error("AWS Auth Type must be set")
+			return S, false
+		}
 		p := api.AWSProvider{Service: api.AWSServiceSecretsManager, Region: K.Spec.Region}
 		prov := api.SecretStoreProvider{}
 		prov.AWS = &p
@@ -131,6 +135,10 @@ func bindProvider(ctx context.Context, S api.SecretStore, K apis.KESExternalSecr
 			log.Warnf("Failed to Install AWS Backend Specific configuration: %v. Make sure you have set up Controller Pod Identity or manually edit SecretStore before applying it", err)
 		}
 	case "systemManager":
+		if client.Options.AWSOptions.AuthType == "" {
+			log.Error("AWS Auth Type must be set")
+			return S, false
+		}
 		p := api.AWSProvider{Service: api.AWSServiceParameterStore, Region: K.Spec.Region}
 		prov := api.SecretStoreProvider{}
 		prov.AWS = &p
@@ -394,16 +402,16 @@ func Root(ctx context.Context, client *provider.KesToEsoClient) []RootResponse {
 		}
 		S := utils.NewSecretStore(client.Options.SecretStore)
 		S, newProvider := bindProvider(ctx, S, K, client)
-		secret_filename := fmt.Sprintf("%v/external-secret-%v.yaml", client.Options.OutputPath, E.ObjectMeta.Name)
+		secretFilename := fmt.Sprintf("%v/external-secret-%v.yaml", client.Options.OutputPath, E.ObjectMeta.Name)
 		if newProvider {
-			store_filename := fmt.Sprintf("%v/secret-store-%v.yaml", client.Options.OutputPath, S.ObjectMeta.Name)
-			err = utils.WriteYaml(S, store_filename, client.Options.ToStdout)
+			storeFilename := fmt.Sprintf("%v/secret-store-%v.yaml", client.Options.OutputPath, S.ObjectMeta.Name)
+			err = utils.WriteYaml(S, storeFilename, client.Options.ToStdout)
 			if err != nil {
 				panic(err)
 			}
 		}
 		E = linkSecretStore(E, S)
-		err = utils.WriteYaml(E, secret_filename, client.Options.ToStdout)
+		err = utils.WriteYaml(E, secretFilename, client.Options.ToStdout)
 		if err != nil {
 			panic(err)
 		}

@@ -126,7 +126,7 @@ func init() {
 	generateCmd.Flags().String("kes-container-name", "kubernetes-external-secrets", "name of KES container object")
 	generateCmd.Flags().StringP("kes-namespace", "n", "default", "namespace where KES is installed")
 	generateCmd.Flags().String("target-namespace", "", "namespace to install files (not recommended - overrides KES-ExternalSecrets definitions)")
-	generateCmd.Flags().String("aws-auth-type", "role", "select AWS auth type.(role, accessKey, jwt)")
+	generateCmd.Flags().String("aws-auth-type", "", "select AWS auth type.(role, accessKey, jwt)")
 	generateCmd.Flags().String("aws-service-account", "", "generate service account name")
 	generateCmd.Flags().String("aws-role-arn", "", "for secret store role arn")
 }
